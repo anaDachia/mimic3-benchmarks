@@ -51,6 +51,23 @@ def read_events_table_by_row(mimic3_path, table):
             row['ICUSTAY_ID'] = ''
         yield row, i, nb_rows[table.lower()]
 
+def read_seq_tables_by_row(mimic3_path, table):
+    reader = csv.DictReader(open(os.path.join(mimic3_path, table.upper() + '.csv'), 'r'))
+    for i, row in enumerate(reader):
+        if 'ICUSTAY_ID' not in row:
+            row['ICUSTAY_ID'] = ''
+        if table.upper() == "LABEVENTS":
+            row['FLAG'] = "ab" if row['FLAG'] == "abnormal" else "n"
+        if table.upper() == "MICROBIOLOGYEVENTS":
+            row['ITEMID'] = row["SPEC_ITEMID"]
+            flag = "n"
+            if row["ORG_ITEMID"] != "":
+                row['ITEMID'] = row['SPEC_ITEMID'] + "-" + row["ORG_ITEMID"]
+                flag = "ab"
+            row["FLAG"] = flag
+        yield row, i
+
+
 
 def count_icd_codes(diagnoses, output_path=None):
     codes = diagnoses[['ICD9_CODE', 'SHORT_TITLE', 'LONG_TITLE']].drop_duplicates().set_index('ICD9_CODE')
@@ -111,6 +128,61 @@ def filter_icustays_on_age(stays, min_age=18, max_age=np.inf):
 def filter_diagnoses_on_stays(diagnoses, stays):
     return diagnoses.merge(stays[['SUBJECT_ID', 'HADM_ID', 'ICUSTAY_ID']].drop_duplicates(), how='inner',
                            left_on=['SUBJECT_ID', 'HADM_ID'], right_on=['SUBJECT_ID', 'HADM_ID'])
+
+#TODO compelete
+def read_static_tables(table_name, mimic3_path):
+    if table_name == 'PROCEDURES_ICD':
+        return read_procedures_table(mimic3_path)
+    elif table_name == 'DRGCODES':
+        return read_drg_table(mimic3_path)
+    elif table_name == 'PRESCRIPTIONS':
+        return read_prescription_table(mimic3_path)
+
+
+def read_prescription_table(mimic3_path):
+    prescription = dataframe_from_csv(os.path.join(mimic3_path, 'PRESCRIPTIONS.csv'))
+    prescription = prescription[['SUBJECT_ID', 'HADM_ID', 'DRUG']]
+    prescription[['SUBJECT_ID', 'HADM_ID']] = prescription[['SUBJECT_ID', 'HADM_ID']].astype(int)
+    return prescription
+
+
+
+def read_drg_table(mimic3_path):
+    drg_codes = dataframe_from_csv(os.path.join(mimic3_path, 'DRGCODES.csv'))
+    drg_codes = drg_codes[['SUBJECT_ID', 'HADM_ID', 'DRG_TYPE', 'DRG_CODE']]
+    drg_codes[['SUBJECT_ID', 'HADM_ID']] = drg_codes[['SUBJECT_ID', 'HADM_ID']].astype(int)
+    return drg_codes
+
+
+
+def read_procedures_table(mimic3_path):
+    codes = dataframe_from_csv(os.path.join(mimic3_path, 'D_ICD_PROCEDURES.csv'))
+    codes = codes[['ICD9_CODE', 'SHORT_TITLE', 'LONG_TITLE']]
+    procedures = dataframe_from_csv(os.path.join(mimic3_path, 'PROCEDURES_ICD.csv'))
+    procedures = procedures.merge(codes, how='inner', left_on='ICD9_CODE', right_on='ICD9_CODE')
+    procedures[['SUBJECT_ID', 'HADM_ID']] = procedures[['SUBJECT_ID', 'HADM_ID']].astype(int)
+    return procedures
+
+
+def break_up_static_tables_by_subject(tables, output_path, mimic3_path, subjects=None, verbose=1):
+    if verbose:
+        sys.stdout.write('breaking up static tables by subject')
+    for table_name in tables:
+        table = read_static_tables(table_name, mimic3_path=mimic3_path)
+        subjects = tables.SUBJECT_ID.unique() if subjects is None else subjects
+        nb_subjects = subjects.shape[0]
+        for i, subject_id in enumerate(subjects):
+            if verbose:
+                sys.stdout.write('\rSUBJECT {0} of {1}...'.format(i + 1, nb_subjects))
+            dn = os.path.join(output_path, str(subject_id))
+            try:
+                os.makedirs(dn)
+            except:
+                pass
+            table.ix[table.SUBJECT_ID == subject_id].to_csv(os.path.join(dn, table_name.lower() + '.csv'),
+                                                                                     index=False)
+    if verbose:
+        sys.stdout.write('DONE!\n')
 
 
 def break_up_stays_by_subject(stays, output_path, subjects=None, verbose=1):
@@ -219,3 +291,53 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path, i
                                                                            data_stats.last_write_no,
                                                                            data_stats.last_write_nb_rows,
                                                                            data_stats.last_write_subject_id))
+
+def read_seq_table_and_break_by_subject(mimic3_path, table, output_path, subjects_to_keep):
+    obs_header = ['SUBJECT_ID', 'HADM_ID', 'ICUSTAY_ID', 'CHARTTIME', 'ITEMID', 'FLAG']
+    if subjects_to_keep is not None:
+        subjects_to_keep = set([str(s) for s in subjects_to_keep])
+    class DataStats(object):
+        def __init__(self):
+            self.curr_subject_id = ''
+            self.last_write_no = 0
+            self.last_write_nb_rows = 0
+            self.last_write_subject_id = ''
+            self.curr_obs = []
+
+    data_stats = DataStats()
+
+    def write_current_observations():
+        data_stats.last_write_no += 1
+        data_stats.last_write_nb_rows = len(data_stats.curr_obs)
+        data_stats.last_write_subject_id = data_stats.curr_subject_id
+        dn = os.path.join(output_path, str(data_stats.curr_subject_id))
+        try:
+            os.makedirs(dn)
+        except:
+            pass
+        fn = os.path.join(dn, str.lower(table) + '.csv')
+        if not os.path.exists(fn) or not os.path.isfile(fn):
+            f = open(fn, 'w')
+            f.write(','.join(obs_header) + '\n')
+            f.close()
+        w = csv.DictWriter(open(fn, 'a'), fieldnames=obs_header, quoting=csv.QUOTE_MINIMAL)
+        w.writerows(data_stats.curr_obs)
+        data_stats.curr_obs = []
+
+
+    for row, row_no in read_seq_tables_by_row(mimic3_path, table):
+        if (subjects_to_keep is not None) and (row['SUBJECT_ID'] not in subjects_to_keep):
+            continue
+        row_out = {'SUBJECT_ID': row['SUBJECT_ID'],
+                   'HADM_ID': row['HADM_ID'],
+                   'ICUSTAY_ID': '' if 'ICUSTAY_ID' not in row else row['ICUSTAY_ID'],
+                   'CHARTTIME': row['CHARTTIME'],
+                   'ITEMID': row['ITEMID'],
+                   'FLAG': row['FLAG']}
+        if data_stats.curr_subject_id != '' and data_stats.curr_subject_id != row['SUBJECT_ID']:
+            write_current_observations()
+        data_stats.curr_obs.append(row_out)
+        data_stats.curr_subject_id = row['SUBJECT_ID']
+
+    if data_stats.curr_subject_id != '':
+        write_current_observations()

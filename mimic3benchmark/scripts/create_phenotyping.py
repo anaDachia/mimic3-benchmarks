@@ -40,6 +40,7 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 ts_lines = ts_lines[1:]
                 event_times = [float(line.split(',')[0]) for line in ts_lines]
 
+                #TODO figure this out
                 ts_lines = [line for (line, t) in zip(ts_lines, event_times)
                             if -eps < t < los + eps]
 

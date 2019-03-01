@@ -34,6 +34,19 @@ def read_events(subject_path, remove_null=True):
     # events.sort_values(by=['CHARTTIME', 'ITEMID', 'ICUSTAY_ID'], inplace=True)
     return events
 
+def read_seq_table(subject_path, table_name):
+    events = dataframe_from_csv(os.path.join(subject_path, table_name + '.csv'), index_col=None)
+    events.CHARTTIME = pd.to_datetime(events.CHARTTIME)
+    events.HADM_ID = events.HADM_ID.fillna(value=-1).astype(int)
+    events.ICUSTAY_ID = events.ICUSTAY_ID.fillna(value=-1).astype(int)
+    return events
+
+def read_static_table(subject_path, table_name):
+    events = dataframe_from_csv(os.path.join(subject_path, table_name.lower() + '.csv'), index_col=None)
+    events.HADM_ID = events.HADM_ID.fillna(value=-1).astype(int)
+    events.SUBJECT_ID = events.SUBJECT_ID.fillna(value=-1).astype(int)
+    return events
+
 
 def get_events_for_stay(events, icustayid, intime=None, outtime=None):
     idx = (events.ICUSTAY_ID == icustayid)
@@ -63,6 +76,19 @@ def convert_events_to_timeseries(events, variable_column='VARIABLE', variables=[
         if v not in timeseries:
             timeseries[v] = np.nan
     return timeseries
+
+def convert_seq_tables_to_timeseries(seq_table_events):
+    metadata = seq_table_events[['CHARTTIME', 'ICUSTAY_ID']].sort_values(by=['CHARTTIME', 'ICUSTAY_ID'])\
+                    .drop_duplicates(keep='first').set_index('CHARTTIME')
+    timeseries = seq_table_events[['CHARTTIME', "ITEMID", 'FLAG']]\
+            .sort_values(by=['CHARTTIME', 'ITEMID', 'FLAG'], axis=0)\
+            .drop_duplicates(subset=['CHARTTIME', 'ITEMID', 'FLAG'], keep='last')
+    # timeseries = timeseries.pivot(index='CHARTTIME', columns='ITEMID', values='FLAG').merge(metadata, left_index=True, right_index=True)\
+    #                 .sort_index(axis=0).reset_index()
+    timeseries = timeseries.merge(metadata, on = "CHARTTIME").reset_index()
+    return timeseries
+
+
 
 
 def get_first_valid_from_timeseries(timeseries, variable):

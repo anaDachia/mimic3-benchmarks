@@ -6,25 +6,46 @@ import argparse
 import os
 import sys
 
-from mimic3benchmark.subject import read_stays, read_diagnoses, read_events, get_events_for_stay, add_hours_elpased_to_events
+from mimic3benchmark.subject import read_stays, read_diagnoses, read_events, get_events_for_stay, add_hours_elpased_to_events, read_static_table
 from mimic3benchmark.subject import convert_events_to_timeseries, get_first_valid_from_timeseries
 from mimic3benchmark.preprocessing import read_itemid_to_variable_map, map_itemids_to_variables, read_variable_ranges, clean_events
-from mimic3benchmark.preprocessing import transform_gender, transform_ethnicity, assemble_episodic_data
+from mimic3benchmark.preprocessing import transform_gender, transform_ethnicity, assemble_episodic_data, preprocess_static_events
 
 
 parser = argparse.ArgumentParser(description='Extract episodes from per-subject data.')
+
 parser.add_argument('subjects_root_path', type=str, help='Directory containing subject sub-directories.')
+
 parser.add_argument('--variable_map_file', type=str,
                     default=os.path.join(os.path.dirname(__file__), '../resources/itemid_to_variable_map.csv'),
                     help='CSV containing ITEMID-to-VARIABLE map.')
+
 parser.add_argument('--reference_range_file', type=str,
                     default=os.path.join(os.path.dirname(__file__), '../resources/variable_ranges.csv'),
                     help='CSV containing reference ranges for VARIABLEs.')
+
+parser.add_argument('--static_tables', '-t', type=str, nargs='+', help='Tables from which to read static tables.',
+                    default=['PROCEDURES_ICD', 'DRGCODES', 'PRESCRIPTIONS'])
+
 parser.add_argument('--verbose', '-v', type=int, help='Level of verbosity in output.', default=1)
 args, _ = parser.parse_known_args()
 
 var_map = read_itemid_to_variable_map(args.variable_map_file)
 variables = var_map.VARIABLE.unique()
+
+
+def save_static_events_for_stay(subject_root_path, subject_id, hadm_id, episode_index):
+
+    try:
+        os.makedirs(os.path.join(subject_root_path, subject_id, 'episode{}'.format(episode_index+1)))
+    except:
+        pass
+    for table in args.static_tables:
+        static_events = read_static_table(os.path.join(subject_root_path, subject_id), table)
+        static_events = preprocess_static_events(static_events, table)
+        static_events.loc[static_events.HADM_ID == hadm_id].\
+            to_csv(os.path.join(subject_root_path, subject_id, 'episode{}'.format(episode_index+1),
+                                table.lower() +'.csv'),index=False)
 
 for subject_dir in os.listdir(args.subjects_root_path):
     dn = os.path.join(args.subjects_root_path, subject_dir)
@@ -66,6 +87,8 @@ for subject_dir in os.listdir(args.subjects_root_path):
 
     for i in range(stays.shape[0]):
         stay_id = stays.ICUSTAY_ID.iloc[i]
+        subject_id = stays.SUBJECT_ID.iloc[i]
+        hadm_id = stays.HADM_ID.iloc[i]
         sys.stdout.write(' {}'.format(stay_id))
         sys.stdout.flush()
         intime = stays.INTIME.iloc[i]
@@ -80,9 +103,14 @@ for subject_dir in os.listdir(args.subjects_root_path):
         episode = add_hours_elpased_to_events(episode, intime).set_index('HOURS').sort_index(axis=0)
         episodic_data.Weight.ix[stay_id] = get_first_valid_from_timeseries(episode, 'Weight')
         episodic_data.Height.ix[stay_id] = get_first_valid_from_timeseries(episode, 'Height')
-        episodic_data.ix[episodic_data.index==stay_id].to_csv(os.path.join(args.subjects_root_path, subject_dir, 'episode{}.csv'.format(i+1)), index_label='Icustay')
+        episodic_data.ix[episodic_data.index==stay_id].to_csv(os.path.join(args.subjects_root_path, subject_dir,  'episode{}.csv'.format(i+1)), index_label='Icustay')
         columns = list(episode.columns)
         columns_sorted = sorted(columns, key=(lambda x: "" if x == "Hours" else x))
         episode = episode[columns_sorted]
         episode.to_csv(os.path.join(args.subjects_root_path, subject_dir, 'episode{}_timeseries.csv'.format(i+1)), index_label='Hours')
+
+        save_static_events_for_stay(args.subjects_root_path, subject_dir, hadm_id, i)
     sys.stdout.write(' DONE!\n')
+
+
+

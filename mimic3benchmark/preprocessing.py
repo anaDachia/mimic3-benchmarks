@@ -275,6 +275,70 @@ clean_fns = {
     'Weight': clean_weight,
     'Height': clean_height
 }
+ranges_start = [1, 140, 240, 280, 290, 320, 390, 460, 520, 580, 630, 680, 710, 740, 760, 780, 790, 797, 800, 999] #len =18
+def grouper (code):
+    code =str(code)
+    if len(code) > 3:
+        code = code[:3]
+    group = len(ranges_start) - 1
+    if code[0] == "E" or code[0] == "e":
+        group = len(ranges_start)
+    elif code[0] == "V" or code[0] == "v":
+        group = len(ranges_start) + 1
+    else:
+        try:
+            num = int(code)
+        except:
+            print ("code was none")
+            num = 21
+        for i in range(1, len(ranges_start)):
+            if num >= ranges_start[i - 1] and num < ranges_start[i]:
+                group = i
+    return group
+
+def clean_prescription(pres_str):
+    pres_str_chunks = pres_str.split()
+    def hasSigns(inputString):
+        for s in inputString:
+            if not s.isalpha() and s!= "-":
+                return True
+        return False
+    def hasNumbers(inputString):
+        return bool(re.search(r'\d', inputString))
+
+    start_ind = 0
+    for ch_ind, ch in enumerate(pres_str_chunks):
+        if hasNumbers(ch) or hasSigns(ch):
+            if ch_ind == 0:
+                start_ind = ch_ind + 1
+                continue
+            else:
+                ch_ind -= 1
+                break
+    res = "_".join(pres_str_chunks[start_ind: ch_ind + 1])
+    if res == "":
+        res = pres_str_chunks[0]
+    return res.upper()
+
+
+def preprocess_drg (events):
+    events["EVENT_ID"] = events['DRG_TYPE'].apply(lambda x: x.replace(" ", "")) + "-" + events['DRG_CODE'].map(str)
+    events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
+    return events
+
+def preprocess_pres(events):
+    events["EVENT_ID"] = events['DRUG'].apply(clean_prescription)
+    events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
+    return events
+def preprocess_proc(events):
+    events["EVENT_ID"] = events['ICD9_CODE']
+    events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
+    return events
+preprocess_fn = {
+    "drgcodes" : preprocess_drg,
+    "prescriptions" : preprocess_pres,
+    "procedures_icd": preprocess_proc,
+}
 
 
 def clean_events(events):
@@ -289,3 +353,11 @@ def clean_events(events):
             print("values:", events.ix[idx])
             exit()
     return events.ix[events.VALUE.notnull()]
+
+
+def preprocess_static_events(events, table_name):
+    processed_events = preprocess_fn[table_name.lower()](events)
+    return processed_events
+
+
+

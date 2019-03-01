@@ -13,7 +13,14 @@ parser = argparse.ArgumentParser(description='Extract per-subject data from MIMI
 parser.add_argument('mimic3_path', type=str, help='Directory containing MIMIC-III CSV files.')
 parser.add_argument('output_path', type=str, help='Directory where per-subject data should be written.')
 parser.add_argument('--event_tables', '-e', type=str, nargs='+', help='Tables from which to read events.',
-                    default=['CHARTEVENTS', 'LABEVENTS', 'OUTPUTEVENTS'])
+                    default=[ 'LABEVENTS']) #'CHARTEVENTS',, 'OUTPUTEVENTS'
+
+parser.add_argument('--seq_tables', '-s', type=str, nargs='+', help='Tables from which to read sequential tables.',
+                    default=['LABEVENTS', 'MICROBIOLOGYEVENTS'])
+
+parser.add_argument('--static_tables', '-t', type=str, nargs='+', help='Tables from which to read static tables.',
+                    default=['PROCEDURES_ICD', 'DRGCODES', 'PRESCRIPTIONS'])
+
 parser.add_argument('--phenotype_definitions', '-p', type=str,
                     default=os.path.join(os.path.dirname(__file__), '../resources/hcup_ccs_2015_definitions.yaml'),
                     help='YAML file with phenotype definitions.')
@@ -21,6 +28,7 @@ parser.add_argument('--itemids_file', '-i', type=str, help='CSV containing list 
 parser.add_argument('--verbose', '-v', type=int, help='Level of verbosity in output.', default=1)
 parser.add_argument('--test', action='store_true', help='TEST MODE: process only 1000 subjects, 1000000 events.')
 args, _ = parser.parse_known_args()
+
 
 try:
     os.makedirs(args.output_path)
@@ -65,7 +73,7 @@ make_phenotype_label_matrix(phenotypes, stays).to_csv(os.path.join(args.output_p
                                                       index=False, quoting=csv.QUOTE_NONNUMERIC)
 
 if args.test:
-    pat_idx = np.random.choice(patients.shape[0], size=1000)
+    pat_idx = np.random.choice(patients.shape[0], size=10)
     patients = patients.iloc[pat_idx]
     stays = stays.merge(patients[['SUBJECT_ID']], left_on='SUBJECT_ID', right_on='SUBJECT_ID')
     args.event_tables = [args.event_tables[0]]
@@ -74,8 +82,12 @@ if args.test:
 subjects = stays.SUBJECT_ID.unique()
 break_up_stays_by_subject(stays, args.output_path, subjects=subjects, verbose=args.verbose)
 break_up_diagnoses_by_subject(phenotypes, args.output_path, subjects=subjects, verbose=args.verbose)
+break_up_static_tables_by_subject(args.static_tables, args.output_path, args.mimic3_path ,subjects = subjects, verbose=args.verbose)
 items_to_keep = set(
     [int(itemid) for itemid in dataframe_from_csv(args.itemids_file)['ITEMID'].unique()]) if args.itemids_file else None
 for table in args.event_tables:
     read_events_table_and_break_up_by_subject(args.mimic3_path, table, args.output_path, items_to_keep=items_to_keep,
                                               subjects_to_keep=subjects, verbose=args.verbose)
+
+for table in args.seq_tables:
+    read_seq_table_and_break_by_subject(args.mimic3_path, table, args.output_path, subjects_to_keep=subjects)
