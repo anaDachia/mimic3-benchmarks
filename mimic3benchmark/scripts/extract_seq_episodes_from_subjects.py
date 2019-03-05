@@ -49,7 +49,7 @@ for subject_dir in os.listdir(args.subjects_root_path):
             if not os.path.exists(os.path.join(args.subjects_root_path, subject_dir, seq_table_name.lower() + '.csv')):
                 print ("no event of this type for this subject: " + str(seq_table_name))
                 continue
-            seq_table = read_seq_table(os.path.join(args.subjects_root_path, subject_dir), seq_table_name)
+            seq_table = read_seq_table(os.path.join(args.subjects_root_path, subject_dir), seq_table_name.lower())
             timeseries = convert_seq_tables_to_timeseries(seq_table)
             episode = get_events_for_stay(timeseries, stay_id, intime, outtime)
             if episode.shape[0] == 0:
@@ -57,6 +57,7 @@ for subject_dir in os.listdir(args.subjects_root_path):
                 sys.stdout.flush()
                 continue
             episode = add_hours_elpased_to_events(episode, intime)#.set_index('HOURS').sort_index(axis=0)
+	    episode = episode.drop_duplicates(subset = ["ITEMID", "HOURS"])
             episode = episode.pivot(index= 'ITEMID', columns='HOURS', values='FLAG')
 
 

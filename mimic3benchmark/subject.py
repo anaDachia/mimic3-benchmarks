@@ -78,13 +78,16 @@ def convert_events_to_timeseries(events, variable_column='VARIABLE', variables=[
     return timeseries
 
 def convert_seq_tables_to_timeseries(seq_table_events):
+    #print(list(seq_table_events))
     metadata = seq_table_events[['CHARTTIME', 'ICUSTAY_ID']].sort_values(by=['CHARTTIME', 'ICUSTAY_ID'])\
-                    .drop_duplicates(keep='first').set_index('CHARTTIME')
+                    .drop_duplicates(keep='first')#.set_index('CHARTTIME')
+    #print(list(metadata))
     timeseries = seq_table_events[['CHARTTIME', "ITEMID", 'FLAG']]\
             .sort_values(by=['CHARTTIME', 'ITEMID', 'FLAG'], axis=0)\
             .drop_duplicates(subset=['CHARTTIME', 'ITEMID', 'FLAG'], keep='last')
     # timeseries = timeseries.pivot(index='CHARTTIME', columns='ITEMID', values='FLAG').merge(metadata, left_index=True, right_index=True)\
     #                 .sort_index(axis=0).reset_index()
+    #print(list(timeseries))
     timeseries = timeseries.merge(metadata, on = "CHARTTIME").reset_index()
     return timeseries
 

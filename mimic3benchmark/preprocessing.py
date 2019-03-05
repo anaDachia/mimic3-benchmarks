@@ -307,6 +307,7 @@ def clean_prescription(pres_str):
         return bool(re.search(r'\d', inputString))
 
     start_ind = 0
+    ch_ind = len(pres_str_chunks) - 1
     for ch_ind, ch in enumerate(pres_str_chunks):
         if hasNumbers(ch) or hasSigns(ch):
             if ch_ind == 0:
@@ -317,7 +318,7 @@ def clean_prescription(pres_str):
                 break
     res = "_".join(pres_str_chunks[start_ind: ch_ind + 1])
     if res == "":
-        res = pres_str_chunks[0]
+        res = pres_str
     return res.upper()
 
 
