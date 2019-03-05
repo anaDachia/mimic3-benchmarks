@@ -142,7 +142,7 @@ def process_partition(args, partition):
     edge_file =  os.path.join(output_dir, "Edge.csv")
     working_dir = os.path.join(args.root_path, partition)
     if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
+        os.makedirs(output_dir)
     open(edge_file, "w").close()
     patients = list(filter(str.isdigit, os.listdir(working_dir)))
     for (patient_index, patient) in enumerate(patients):
