@@ -120,11 +120,25 @@ def write_diagnoses(root_patient_folder, hadm_id, output_dir, type ="low", pheno
 
 
 def process_episode(output_dir, root_patient_folder, episode_ind, label_type, pheno_map = None):
-    episode_folder = os.path.join(root_patient_folder, "episode" + str(episode_ind + 1))
+    try:
+        episode_folder = os.path.join(root_patient_folder, "episode" + str(episode_ind + 1))
+        episode = pd.read_csv(os.path.join(root_patient_folder,"episode" + str(episode_ind + 1) + ".csv"))
+    except:
+        print("episode csv file or folder missing for subject :" + str(root_patient_folder))
+        return
     stays = read_stays(root_patient_folder)
     episode = pd.read_csv(os.path.join(root_patient_folder,"episode" + str(episode_ind + 1) + ".csv"))
-    subject_id = stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]][0]
-    hadm_id = stays["HADM_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
+    #print(episode.to_string())
+    #print (episode.Icustay.iloc[0])
+    #print (stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].shape)
+    #print (stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0])
+    try:
+        subject_id = stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
+        hadm_id = stays["HADM_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
+    except:
+        print("cannot match subject or admission for subject :" + str(root_patient_folder))
+        return
+
     pati_abrv = "pati." + str(subject_id) + "+" + str(hadm_id)
     write_bio_edges(episode.Age[0], episode.Gender[0], episode.Ethnicity[0], pati_abrv, output_dir )
     write_diagnoses(root_patient_folder, hadm_id, output_dir, type = label_type, pheno_map=pheno_map)
@@ -188,6 +202,8 @@ def process_partition(args, partition):
     else:
         pheno_map = None
     for (patient_index, patient) in enumerate(patients):
+        if patient_index % 100 == 0:
+            print ("processing patient: " + str(patient_index))
         patient_folder = os.path.join(working_dir, patient)
         for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
             process_episode(output_dir, patient_folder , episode_ind, args.label_type, pheno_map)
@@ -218,13 +234,14 @@ def main():
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
 
-
+    print("start processing train partition")
     node_map, train_edge_file = process_partition(args, "train")
-
+    print("making supervised files")
     create_supervised_files(os.path.join(args.output_path, "train"), train_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"])
-
+    print("start processing test partition")
     _, test_edge_file = process_partition(args, "test")
+    print("making supervised files")
     create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"], node_map= node_map)
 
