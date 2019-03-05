@@ -55,6 +55,9 @@ for subject_dir in os.listdir(args.subjects_root_path):
             raise Exception
     except:
         continue
+    if subject_dir != "21":
+        continue
+    print("okay we are in subject 21!")
     sys.stdout.write('Subject {}: '.format(subject_id))
     sys.stdout.flush()
 
@@ -78,7 +81,7 @@ for subject_dir in os.listdir(args.subjects_root_path):
     events = map_itemids_to_variables(events, var_map)
     events = clean_events(events)
     if events.shape[0] == 0:
-       sys.stdout.write('no valid events!\n')
+       sys.stdout.write('no valid events in all episodes!\n')
        continue
     timeseries = convert_events_to_timeseries(events, variables=variables)
 
@@ -96,7 +99,7 @@ for subject_dir in os.listdir(args.subjects_root_path):
 
         episode = get_events_for_stay(timeseries, stay_id, intime, outtime)
         if episode.shape[0] == 0:
-           sys.stdout.write(' (no data!)')
+           sys.stdout.write(' (no data in this episode!)')
            sys.stdout.flush()
            continue
 
