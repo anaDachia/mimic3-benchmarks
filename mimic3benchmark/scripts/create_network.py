@@ -2,6 +2,7 @@ import os
 import argparse
 from mimic3benchmark.subject import read_stays, read_diagnoses
 from mimic3benchmark.util import *
+import yaml
 
 table_name_map= {"drgcodes" : "drg", "prescriptions" : "pres", "procedures": "proc", "labevents":"labt", "microbiologyevents":"micro"}
 file_header = ['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']
@@ -15,6 +16,23 @@ def write_bio_edges(age, gender,race, pati_abrv, output_dir):
     bio_df.loc[len(bio_df)] = [pati_abrv, "eth." + str(race), 1, "", "pati.bio"]
 
     bio_df.to_csv(os.path.join(output_dir, "Edge.csv"), index_label='NODE1', mode="a", header=False, index=False)
+
+def create_pheno_mappings(args):
+    with open(args.phenotype_definitions) as definitions_file:
+        definitions = yaml.load(definitions_file)
+
+    code_to_group = {}
+    for group in definitions:
+        codes = definitions[group]['codes']
+        for code in codes:
+            if code not in code_to_group:
+                code_to_group[code] = group
+            else:
+                assert code_to_group[code] == group
+
+    id_to_group = sorted(definitions.keys())
+    group_to_id = dict((x, i) for (i, x) in enumerate(id_to_group))
+    return id_to_group, group_to_id
 
 
 def write_seq_event(ts_lines, output_dir, pati_abrv, table_abrv_name):
@@ -73,24 +91,43 @@ def write_static_event(table_events, output_dir, table_abrv_name):
 
 
 #types = "low", "high", "phen"
-def write_diagnoses(root_patient_folder, hadm_id, output_dir, type ="low"):
+def write_diagnoses(root_patient_folder, hadm_id, output_dir, type ="low", pheno_map = None):
     if type == "low":
         events = read_diagnoses(root_patient_folder)
         events = events.loc[events["HADM_ID"] == hadm_id]
         events["EVENT_ID"] = events['ICD9_CODE']
         events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
         write_static_event(events, output_dir, "diag")
+    elif type == "pheno":
+        pass
+        # code_to_group = pheno_map[0]
+        # group_to_id = pheno_map[1]
+        # cur_labels = [0 for i in range(len(code_to_group))]
+        #
+        # diagnoses_df = pd.read_csv(os.path.join(root_patient_folder, "diagnoses.csv"),
+        #                            dtype={"ICD9_CODE": str})
+        # diagnoses_df = diagnoses_df[diagnoses_df.HADM_ID == hadm_id]
+        # for index, row in diagnoses_df.iterrows():
+        #     if row['USE_IN_BENCHMARK']:
+        #         code = row['ICD9_CODE']
+        #         group = code_to_group[code]
+        #         group_id = group_to_id[group]
+        #         cur_labels[group_id] = 1
+        #
+        # cur_labels = [x for (i, x) in enumerate(cur_labels)
+        #               if definitions[code_to_group[i]]['use_in_benchmark']]
 
 
-def process_episode(output_dir, root_patient_folder, episode_ind, label_type):
+
+def process_episode(output_dir, root_patient_folder, episode_ind, label_type, pheno_map = None):
     episode_folder = os.path.join(root_patient_folder, "episode" + str(episode_ind + 1))
     stays = read_stays(root_patient_folder)
     episode = pd.read_csv(os.path.join(root_patient_folder,"episode" + str(episode_ind + 1) + ".csv"))
     subject_id = stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]][0]
-    hadm_id = stays["HADM_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]][0]
+    hadm_id = stays["HADM_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
     pati_abrv = "pati." + str(subject_id) + "+" + str(hadm_id)
     write_bio_edges(episode.Age[0], episode.Gender[0], episode.Ethnicity[0], pati_abrv, output_dir )
-    write_diagnoses(root_patient_folder, hadm_id, output_dir, type = label_type)
+    write_diagnoses(root_patient_folder, hadm_id, output_dir, type = label_type, pheno_map=pheno_map)
 
     for table in filter(lambda x : ".csv " not in x , os.listdir(episode_folder)):
         table_abrv_name = table_name_map[(table.split(".")[0].split("_")[0])]
@@ -145,14 +182,20 @@ def process_partition(args, partition):
         os.makedirs(output_dir)
     open(edge_file, "w").close()
     patients = list(filter(str.isdigit, os.listdir(working_dir)))
+    if args.label_type == "pheno":
+        id_to_group, group_to_id = create_pheno_mappings(args)
+        pheno_map = (id_to_group, group_to_id)
+    else:
+        pheno_map = None
     for (patient_index, patient) in enumerate(patients):
         patient_folder = os.path.join(working_dir, patient)
         for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
-            process_episode(output_dir, patient_folder , episode_ind, args.label_type)
+            process_episode(output_dir, patient_folder , episode_ind, args.label_type, pheno_map)
 
     node_map, pati_map = create_node_file(edge_file)
     add_symptoms(edge_file ,args.symptoms_file , pati_map)
     return  node_map, edge_file
+
 
 def main():
 
@@ -166,13 +209,15 @@ def main():
 
     parser.add_argument('--valid_suprv_types', '-t', type=str, nargs='+', help='Valid path types for supervsied model.',
                         default=['pati.bio', 'pati.labt', 'pati.proc', 'pati.symp', 'pati.micro'])
-
-
-
+    parser.add_argument('--phenotype_definitions', '-p', type=str,
+                        default=os.path.join(os.path.dirname(__file__), '../resources/hcup_ccs_2015_definitions.yaml'),
+                        help='YAML file with phenotype definitions.')
     args, _ = parser.parse_known_args()
+
 
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
+
 
     node_map, train_edge_file = process_partition(args, "train")
 

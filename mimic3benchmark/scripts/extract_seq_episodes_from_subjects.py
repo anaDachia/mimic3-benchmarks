@@ -57,7 +57,7 @@ for subject_dir in os.listdir(args.subjects_root_path):
                 sys.stdout.flush()
                 continue
             episode = add_hours_elpased_to_events(episode, intime)#.set_index('HOURS').sort_index(axis=0)
-	    episode = episode.drop_duplicates(subset = ["ITEMID", "HOURS"])
+            episode = episode.drop_duplicates(subset = ["ITEMID", "HOURS"])
             episode = episode.pivot(index= 'ITEMID', columns='HOURS', values='FLAG')
 
 
