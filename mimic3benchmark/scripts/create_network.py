@@ -9,7 +9,6 @@ file_header = ['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']
 
 def write_bio_edges(age, gender,race, pati_abrv, output_dir):
     age = "O" if age > 50 else "Y"
-    to_write = []
     bio_df = pd.DataFrame(columns=file_header)
     bio_df.loc[len(bio_df)] = [pati_abrv, "age." + age, "1", "", "pati.bio"]
     bio_df.loc[len(bio_df)] = [pati_abrv, "gender." + str(gender), 1, "", "pati.bio"]
@@ -75,11 +74,12 @@ def write_static_event(table_events, output_dir, table_abrv_name):
 
 #types = "low", "high", "phen"
 def write_diagnoses(root_patient_folder, hadm_id, output_dir, type ="low"):
-    events = read_diagnoses(root_patient_folder)
-    events = events.loc[events["HADM_ID"] == hadm_id]
-    events["EVENT_ID"] = events['ICD9_CODE']
-    events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
-    write_static_event(events, output_dir, "diag")
+    if type == "low":
+        events = read_diagnoses(root_patient_folder)
+        events = events.loc[events["HADM_ID"] == hadm_id]
+        events["EVENT_ID"] = events['ICD9_CODE']
+        events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
+        write_static_event(events, output_dir, "diag")
 
 
 def process_episode(output_dir, root_patient_folder, episode_ind, label_type):
@@ -114,24 +114,6 @@ def add_symptoms(edge_path, symptom_path, pati_map):
 
 
 
-def process_partition(args, partition):
-    output_dir = os.path.join(args.output_path, partition)
-    edge_file =  os.path.join(output_dir, "Edge.csv")
-    working_dir = os.path.join(args.root_path, partition)
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
-    open(edge_file, "w").close()
-    patients = list(filter(str.isdigit, os.listdir(working_dir)))
-    for (patient_index, patient) in enumerate(patients):
-        patient_folder = os.path.join(working_dir, patient)
-        for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
-            process_episode(output_dir, patient_folder , episode_ind, args.label_type)
-
-    node_map, pati_map = create_node_file(edge_file)
-    add_symptoms(edge_file ,args.symptoms_file , pati_map)
-    return  node_map, edge_file
-
-
 def create_node_file(edge_path):
     node_map = {}
     patient_map = {}
@@ -155,6 +137,22 @@ def create_supervised_files(output_dir, edge_file_path, feature_types_keep, labe
     feature_edges_df.to_csv(os.path.join(output_dir, "Features.csv"), index_label='NODE1', mode="a", header=False, index=False)
     label_edges_df.to_csv(os.path.join(output_dir, "Labels.csv"), index_label='NODE1', mode="a", header=False, index=False)
 
+def process_partition(args, partition):
+    output_dir = os.path.join(args.output_path,args.label_type, partition)
+    edge_file =  os.path.join(output_dir, "Edge.csv")
+    working_dir = os.path.join(args.root_path, partition)
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    open(edge_file, "w").close()
+    patients = list(filter(str.isdigit, os.listdir(working_dir)))
+    for (patient_index, patient) in enumerate(patients):
+        patient_folder = os.path.join(working_dir, patient)
+        for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
+            process_episode(output_dir, patient_folder , episode_ind, args.label_type)
+
+    node_map, pati_map = create_node_file(edge_file)
+    add_symptoms(edge_file ,args.symptoms_file , pati_map)
+    return  node_map, edge_file
 
 def main():
 
