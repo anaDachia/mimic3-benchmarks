@@ -26,9 +26,9 @@ for subject_dir in os.listdir(args.subjects_root_path):
             raise Exception
     except:
         continue
-    if subject_dir != "21":
+    if subject_dir != "45079":
         continue
-    print("okay we are in subject 21!")
+    print("okay we are in subject 45079!")
     sys.stdout.write('Subject {}: '.format(subject_id))
     sys.stdout.flush()
     try:
