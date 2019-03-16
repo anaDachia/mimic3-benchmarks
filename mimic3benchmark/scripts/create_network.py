@@ -3,6 +3,8 @@ import argparse
 from mimic3benchmark.subject import read_stays, read_diagnoses
 from mimic3benchmark.util import *
 import yaml
+import collections
+import random
 
 table_name_map= {"drgcodes" : "drg", "prescriptions" : "pres", "procedures": "proc", "labevents":"labt", "microbiologyevents":"micro"}
 file_header = ['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']
@@ -164,9 +166,15 @@ def create_node_file(edge_path, node_path):
 
     return node_map, patient_map
 
+
+
 def create_supervised_files(output_dir, edge_file_path, feature_types_keep, label_type_keep, node_map = None):
     feature_path = os.path.join(output_dir, "Features.csv")
+    label_path = os.path.join(output_dir, "Labels.csv")
+
     open(feature_path, "w").close()
+    open(label_path, "w").close()
+
     edges_df = pd.read_csv(edge_file_path, header=None, names=file_header)
     feature_edges_df = edges_df[edges_df["TYPE"].isin(feature_types_keep)]
     label_edges_df = edges_df[edges_df["TYPE"].isin(label_type_keep)]
@@ -176,8 +184,35 @@ def create_supervised_files(output_dir, edge_file_path, feature_types_keep, labe
         label_edges_df = label_edges_df[label_edges_df["NODE2"].isin(node_map)]
 
 
+    label_edges_df = label_edges_df[["NODE1", "NODE2"]]
+    label_edges_df["LABEL"] = 1
     feature_edges_df.to_csv(feature_path, index_label='NODE1', mode="a", header=False, index=False)
-    label_edges_df.to_csv(os.path.join(output_dir, "Labels.csv"), index_label='NODE1', mode="a", header=False, index=False)
+    label_edges_df.to_csv(label_path, index_label='NODE1', mode="a", header=False, index=False)
+
+
+def create_negative_samples(label_path, node_path, new_label_path, neg_num=100):
+    nodes_df = pd.read_csv(node_path, header=None, names=["NODE", "TYPE"])
+    org_label_df = pd.read_csv(label_path, header=None, names=["PATI", "DIAG", "LABEL"])
+    all_diag = nodes_df["NODE"][nodes_df["TYPE"] == "diag"]
+
+    final_res = []
+
+    pati_diag_dict = collections.defaultdict(list)
+    for index, row in org_label_df.iterrows():
+        pati_diag_dict[row["PATI"]].append(row["DIAG"])
+
+    for pati in pati_diag_dict:
+        diag_list = pati_diag_dict[pati]
+        white_listed_diag = list(filter(lambda a: a not in diag_list, all_diag))
+        for diag in diag_list:
+            final_res.append([pati, diag, 1])
+        neg_samples = random.sample(white_listed_diag, neg_num - len(diag_list))
+        for n in neg_samples:
+            final_res.append([pati, n, 0])
+
+    label_df = pd.DataFrame(final_res, columns=["PATI", "DIAG", "LABEL"])
+    label_df.to_csv(new_label_path, index_label='PATI', mode="a", header=False, index=False)
+
 
 def process_partition(args, partition):
     # preparing the edge and node pathes
@@ -204,6 +239,7 @@ def process_partition(args, partition):
     node_map, pati_map = create_node_file(edge_file, node_file)
     add_symptoms(edge_file ,node_file, args.symptoms_file , pati_map)
     return  node_map, edge_file
+
 
 
 def main():
@@ -238,8 +274,12 @@ def main():
     print("making supervised files")
     create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"], node_map= node_map)
-
     #add negative samples
+    create_negative_samples(os.path.join(args.output_path, "train","Labels.csv"),
+                            os.path.join(args.output_path, "train", "Node.csv"),
+                            os.path.join(args.output_path, "test", "TestLabels.csv"),
+                            neg_num=100)
+
 
 
 
