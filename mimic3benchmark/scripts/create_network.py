@@ -195,6 +195,8 @@ def process_partition(args, partition):
     for (patient_index, patient) in enumerate(patients):
         if patient_index % 100 == 0:
             print ("processing patient: " + str(patient_index))
+        if patient_index == 300:
+            break
         patient_folder = os.path.join(working_dir, patient)
         for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
             process_episode(output_dir, patient_folder , episode_ind, args.label_type, None)
