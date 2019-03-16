@@ -140,9 +140,9 @@ def add_symptoms(edge_path, node_path, symptom_path, pati_map):
     symptoms = symptoms[['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']].drop_duplicates()
     symptoms.to_csv(edge_path, index_label='NODE1', mode="a", header=False, index=False)
 
-    symptom_nodes = symptoms[['NODE1']]
+    symptom_nodes = symptoms[['NODE2']]
     symptom_nodes['TYPE'] = pd.Series(["symp" for i in range(symptom_nodes.shape[0])],
-                                     index=symptoms.index)
+                                     index=symptom_nodes.index)
     symptom_nodes.to_csv(node_path, index_label='NODE', mode="a", header=False, index=False)
 
 
