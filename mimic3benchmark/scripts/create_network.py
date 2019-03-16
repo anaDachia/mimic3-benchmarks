@@ -228,10 +228,10 @@ def process_partition(args, partition):
     # iterating over patients
     patients = list(filter(str.isdigit, os.listdir(working_dir)))
     for (patient_index, patient) in enumerate(patients):
-        if patient_index % 100 == 0:
+        if patient_index % 1000 == 0:
             print ("processing patient: " + str(patient_index))
-        if patient_index == 300:
-            break
+        # if patient_index == 300:
+        #     break
         patient_folder = os.path.join(working_dir, patient)
         for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
             process_episode(output_dir, patient_folder , episode_ind, args.label_type, None)
@@ -275,7 +275,7 @@ def main():
     create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"], node_map= node_map)
     #add negative samples
-    create_negative_samples(os.path.join(args.output_path, "train","Labels.csv"),
+    create_negative_samples(os.path.join(args.output_path, "test","Labels.csv"),
                             os.path.join(args.output_path, "train", "Node.csv"),
                             os.path.join(args.output_path, "test", "TestLabels.csv"),
                             neg_num=100)
