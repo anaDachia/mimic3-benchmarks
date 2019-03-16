@@ -59,16 +59,17 @@ def write_seq_event(ts_lines, output_dir, pati_abrv, table_abrv_name):
                     normal_labs.append(float(event_times[lab_ind]))
                     count_normal += 1
                 except:
+                    print ("exception in reading a lab value")
                     float(event_times[lab_ind].replace('\U00002013', '-'))
 
         if len(normal_labs) > 0:
             normal_times_str = " ".join([str(x) for x in sorted(normal_labs)])
             normal_res.append([pati_abrv, table_abrv_name + "." + lab_id + "+n", str(count_normal),
-                               normal_times_str, "pati.lab"])
+                               normal_times_str, "pati." + table_abrv_name])
         if len(abnormal_labs) > 0:
             abnormal_times_str = " ".join([str(x) for x in sorted(abnormal_labs)])
             abnormal_res.append([pati_abrv, table_abrv_name + "." + lab_id + "+ab", str(count_abnormal),
-                                 abnormal_times_str, "pati.lab"])
+                                 abnormal_times_str, "pati." + table_abrv_name])
 
 
     normal_df = pd.DataFrame(normal_res, columns= file_header)
@@ -98,25 +99,6 @@ def write_diagnoses(root_patient_folder, hadm_id, output_dir, type ="low", pheno
         events["EVENT_ID"] = events['ICD9_CODE']
         events = events[['SUBJECT_ID', 'HADM_ID', 'EVENT_ID']]
         write_static_event(events, output_dir, "diag")
-    elif type == "pheno":
-        pass
-        # code_to_group = pheno_map[0]
-        # group_to_id = pheno_map[1]
-        # cur_labels = [0 for i in range(len(code_to_group))]
-        #
-        # diagnoses_df = pd.read_csv(os.path.join(root_patient_folder, "diagnoses.csv"),
-        #                            dtype={"ICD9_CODE": str})
-        # diagnoses_df = diagnoses_df[diagnoses_df.HADM_ID == hadm_id]
-        # for index, row in diagnoses_df.iterrows():
-        #     if row['USE_IN_BENCHMARK']:
-        #         code = row['ICD9_CODE']
-        #         group = code_to_group[code]
-        #         group_id = group_to_id[group]
-        #         cur_labels[group_id] = 1
-        #
-        # cur_labels = [x for (i, x) in enumerate(cur_labels)
-        #               if definitions[code_to_group[i]]['use_in_benchmark']]
-
 
 
 def process_episode(output_dir, root_patient_folder, episode_ind, label_type, pheno_map = None):
@@ -127,11 +109,6 @@ def process_episode(output_dir, root_patient_folder, episode_ind, label_type, ph
         print("episode csv file or folder missing for subject :" + str(root_patient_folder))
         return
     stays = read_stays(root_patient_folder)
-    episode = pd.read_csv(os.path.join(root_patient_folder,"episode" + str(episode_ind + 1) + ".csv"))
-    #print(episode.to_string())
-    #print (episode.Icustay.iloc[0])
-    #print (stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].shape)
-    #print (stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0])
     try:
         subject_id = stays["SUBJECT_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
         hadm_id = stays["HADM_ID"].loc[stays["ICUSTAY_ID"] == episode.Icustay.iloc[0]].iloc[0]
@@ -155,7 +132,7 @@ def process_episode(output_dir, root_patient_folder, episode_ind, label_type, ph
             write_static_event(table_events, output_dir, table_abrv_name)
 
 
-def add_symptoms(edge_path, symptom_path, pati_map):
+def add_symptoms(edge_path, node_path, symptom_path, pati_map):
     symptoms = pd.read_csv(symptom_path, header=None, names=["NODE1", "NODE2", "COUNT", "TYPE"])
     symptoms = symptoms[symptoms["NODE1"].isin(pati_map)]
     symptoms['HOURS'] = pd.Series(["" for i in range(symptoms.shape[0])],
@@ -163,19 +140,33 @@ def add_symptoms(edge_path, symptom_path, pati_map):
     symptoms = symptoms[['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']].drop_duplicates()
     symptoms.to_csv(edge_path, index_label='NODE1', mode="a", header=False, index=False)
 
+    symptom_nodes = symptoms[['NODE1']]
+    symptom_nodes['TYPE'] = pd.Series(["symp" for i in range(symptom_nodes.shape[0])],
+                                     index=symptoms.index)
+    symptom_nodes.to_csv(node_path, index_label='NODE', mode="a", header=False, index=False)
 
 
-def create_node_file(edge_path):
+def create_node_file(edge_path, node_path):
     node_map = {}
     patient_map = {}
     edges_df = pd.read_csv(edge_path, header=None, names = file_header)
     for index, row in edges_df.iterrows():
-        node_map[row["NODE1"]] = True
-        node_map[row["NODE2"]] =  True
+        node_map[row["NODE1"]] = row["NODE1"].split(".")[0]
+        node_map[row["NODE2"]] =  row["NODE2"].split(".")[0]
         patient_map[row["NODE1"]] = True
+
+    node_info = []
+    for node in node_map:
+        node_info.append([node, node_map[node]])
+
+    node_df = pd.DataFrame(node_info, columns= ["NODE", "TYPE"])
+    node_df.to_csv(node_path, index_label='NODE1', mode="a", header=False, index=False)
+
     return node_map, patient_map
 
 def create_supervised_files(output_dir, edge_file_path, feature_types_keep, label_type_keep, node_map = None):
+    feature_path = os.path.join(output_dir, "Features.csv")
+    open(feature_path, "w").close()
     edges_df = pd.read_csv(edge_file_path, header=None, names=file_header)
     feature_edges_df = edges_df[edges_df["TYPE"].isin(feature_types_keep)]
     label_edges_df = edges_df[edges_df["TYPE"].isin(label_type_keep)]
@@ -185,31 +176,31 @@ def create_supervised_files(output_dir, edge_file_path, feature_types_keep, labe
         label_edges_df = label_edges_df[label_edges_df["NODE2"].isin(node_map)]
 
 
-    feature_edges_df.to_csv(os.path.join(output_dir, "Features.csv"), index_label='NODE1', mode="a", header=False, index=False)
+    feature_edges_df.to_csv(feature_path, index_label='NODE1', mode="a", header=False, index=False)
     label_edges_df.to_csv(os.path.join(output_dir, "Labels.csv"), index_label='NODE1', mode="a", header=False, index=False)
 
 def process_partition(args, partition):
-    output_dir = os.path.join(args.output_path,args.label_type, partition)
+    # preparing the edge and node pathes
+    output_dir = os.path.join(args.output_path, partition)
     edge_file =  os.path.join(output_dir, "Edge.csv")
+    node_file = os.path.join(output_dir, "Node.csv")
     working_dir = os.path.join(args.root_path, partition)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     open(edge_file, "w").close()
+    open(node_file, "w").close()
+
+    # iterating over patients
     patients = list(filter(str.isdigit, os.listdir(working_dir)))
-    if args.label_type == "pheno":
-        id_to_group, group_to_id = create_pheno_mappings(args)
-        pheno_map = (id_to_group, group_to_id)
-    else:
-        pheno_map = None
     for (patient_index, patient) in enumerate(patients):
         if patient_index % 100 == 0:
             print ("processing patient: " + str(patient_index))
         patient_folder = os.path.join(working_dir, patient)
         for episode_ind, episode in enumerate(filter(lambda x: "episode" in x and ".csv" not in x, os.listdir(patient_folder))):
-            process_episode(output_dir, patient_folder , episode_ind, args.label_type, pheno_map)
+            process_episode(output_dir, patient_folder , episode_ind, args.label_type, None)
 
-    node_map, pati_map = create_node_file(edge_file)
-    add_symptoms(edge_file ,args.symptoms_file , pati_map)
+    node_map, pati_map = create_node_file(edge_file, node_file)
+    add_symptoms(edge_file ,node_file, args.symptoms_file , pati_map)
     return  node_map, edge_file
 
 
@@ -239,11 +230,16 @@ def main():
     print("making supervised files")
     create_supervised_files(os.path.join(args.output_path, "train"), train_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"])
+    ##############add metapath to edge file ###################
     print("start processing test partition")
     _, test_edge_file = process_partition(args, "test")
     print("making supervised files")
     create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
                             label_type_keep=["pati.diag"], node_map= node_map)
+
+    #add negative samples
+
+
 
 
 
