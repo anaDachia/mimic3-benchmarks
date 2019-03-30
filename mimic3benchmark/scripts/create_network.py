@@ -5,6 +5,7 @@ from mimic3benchmark.util import *
 import yaml
 import collections
 import random
+import itertools
 
 table_name_map= {"drgcodes" : "drg", "prescriptions" : "pres", "procedures": "proc", "labevents":"labt", "microbiologyevents":"micro"}
 file_header = ['NODE1', 'NODE2', 'COUNT', 'HOURS', 'TYPE']
@@ -240,7 +241,44 @@ def process_partition(args, partition):
     add_symptoms(edge_file ,node_file, args.symptoms_file , pati_map)
     return  node_map, edge_file
 
+def add_metapaths(path_list, src_edge_file, target_edge_file):
+    for path in path_list:
+        start, middle, end = path[0], path[1], path[2]
+        edges_df = pd.read_csv(src_edge_file, header=None, names=file_header)
 
+        mid2Strat_dict = {}
+        mid2End_dict = {}
+
+        final_res = []
+
+        for index, row in edges_df.iterrows():
+            types = row["TYPE"].split(".")
+            if len(types) > 2:  # for when our file has meta path too
+                continue
+
+            if types[0] == middle and (types[1] == start or types[1] == end):
+                usedDict = mid2Strat_dict if types[1] == start else mid2End_dict
+                key = row["NODE1"]
+                el = row["NODE2"]
+                if key in usedDict:
+                    usedDict[key].append(el)
+                else:
+                    usedDict[key] = [el]
+
+        final_prod_dict = collections.Counter()
+        for mid in mid2Strat_dict:
+            startList = mid2Strat_dict[mid]
+            if mid not in mid2End_dict:
+                continue
+            endList = mid2End_dict[mid]
+            prod_list = list(itertools.product(startList, endList))
+            for tupl in prod_list:
+                final_prod_dict[tupl] += 1
+        for e in final_prod_dict:
+            cnt = final_prod_dict[e]
+            final_res.append([e[0], e[1], cnt,"" , start + "." + middle + "." + end])
+        meta_df = pd.DataFrame(final_res, columns=file_header)
+        meta_df.to_csv(target_edge_file, mode="a", header=False, index=False)
 
 def main():
 
@@ -260,25 +298,29 @@ def main():
     args, _ = parser.parse_known_args()
 
 
-    if not os.path.exists(args.output_path):
-        os.makedirs(args.output_path)
-
-    print("start processing train partition")
-    node_map, train_edge_file = process_partition(args, "train")
-    print("making supervised files")
-    create_supervised_files(os.path.join(args.output_path, "train"), train_edge_file, feature_types_keep= args.valid_suprv_types,
-                            label_type_keep=["pati.diag"])
-    ##############add metapath to edge file ###################
-    print("start processing test partition")
-    _, test_edge_file = process_partition(args, "test")
-    print("making supervised files")
-    create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
-                            label_type_keep=["pati.diag"], node_map= node_map)
-    #add negative samples
-    create_negative_samples(os.path.join(args.output_path, "test","Labels.csv"),
-                            os.path.join(args.output_path, "train", "Node.csv"),
-                            os.path.join(args.output_path, "test", "TestLabels.csv"),
-                            neg_num=100)
+    # if not os.path.exists(args.output_path):
+    #     os.makedirs(args.output_path)
+    #
+    # print("start processing train partition")
+    # node_map, train_edge_file = process_partition(args, "train")
+    # print("making supervised files")
+    # create_supervised_files(os.path.join(args.output_path, "train"), train_edge_file, feature_types_keep= args.valid_suprv_types,
+    #                         label_type_keep=["pati.diag"])
+    # ##############add metapath to edge file ###################
+    # print("start processing test partition")
+    # _, test_edge_file = process_partition(args, "test")
+    # print("making supervised files")
+    # create_supervised_files(os.path.join(args.output_path, "test"), test_edge_file, feature_types_keep= args.valid_suprv_types,
+    #                         label_type_keep=["pati.diag"], node_map= node_map)
+    # #add negative samples
+    # create_negative_samples(os.path.join(args.output_path, "test","Labels.csv"),
+    #                         os.path.join(args.output_path, "train", "Node.csv"),
+    #                         os.path.join(args.output_path, "test", "TestLabels.csv"),
+    #                         neg_num=100)
+    output_dir = os.path.join(args.output_path, "train")
+    train_edge_file = os.path.join(output_dir, "Edge.csv")
+    metapath_list = [["labt", "pati", "diag"], ["diag", "pati", "symp"], ["labt", "pati", "symp"]]
+    add_metapaths(metapath_list, train_edge_file, train_edge_file)
 
 
 
