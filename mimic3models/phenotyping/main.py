@@ -15,6 +15,7 @@ from mimic3models import metrics
 from mimic3models import keras_utils
 from mimic3models import common_utils
 
+from keras import Model
 from keras.callbacks import ModelCheckpoint, CSVLogger
 
 parser = argparse.ArgumentParser()
@@ -61,9 +62,12 @@ args_dict['num_classes'] = 25
 args_dict['target_repl'] = target_repl
 
 # Build the model
+path = "/Users/ana/Desktop/currentData/projects/mimic3-benchmarks/"
 print("==> using model {}".format(args.network))
-model_module = imp.load_source(os.path.basename(args.network), args.network)
+model_module = imp.load_source(os.path.basename(args.network), path + args.network)
 model = model_module.Network(**args_dict)
+model2 = Model(inputs=model.input,
+                outputs=model.layers[2].output)
 suffix = ".bs{}{}{}.ts{}{}".format(args.batch_size,
                                    ".L1{}".format(args.l1) if args.l1 > 0 else "",
                                    ".L2{}".format(args.l2) if args.l2 > 0 else "",
@@ -155,10 +159,13 @@ elif args.mode == 'test':
                                    args.small_part, target_repl,
                                    shuffle=False, return_names=True)
 
+
+
     names = []
     ts = []
     labels = []
     predictions = []
+    embeddings = []
     for i in range(test_data_gen.steps):
         print("predicting {} / {}".format(i, test_data_gen.steps), end='\r')
         ret = next(test_data_gen)
@@ -167,15 +174,23 @@ elif args.mode == 'test':
         cur_names = ret["names"]
         cur_ts = ret["ts"]
         x = np.array(x)
+
+        tmp_emb = model2.predict_on_batch(x)
+
+
         pred = model.predict_on_batch(x)
         predictions += list(pred)
         labels += list(y)
         names += list(cur_names)
         ts += list(cur_ts)
+        embeddings += list(tmp_emb)
 
-    metrics.print_metrics_multilabel(labels, predictions)
-    path = os.path.join(args.output_dir, "test_predictions", os.path.basename(args.load_state)) + ".csv"
+    #metrics.print_metrics_multilabel(labels, predictions)
+    path = os.path.join(args.output_dir, "test_predictions", os.path.basename(args.load_state)) + "p.csv"
+    path_emb = os.path.join(args.output_dir, "test_embeddings", os.path.basename(args.load_state)) + "e.csv"
     utils.save_results(names, ts, predictions, labels, path)
+    utils.save_embeddings(names, embeddings, path_emb)
+
 
 else:
     raise ValueError("Wrong value for args.mode")

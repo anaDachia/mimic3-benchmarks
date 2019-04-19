@@ -99,6 +99,7 @@ class BatchGen(object):
 
 
 def save_results(names, ts, predictions, labels, path):
+    print (path)
     n_tasks = 25
     common_utils.create_directory(os.path.dirname(path))
     with open(path, 'w') as f:
@@ -114,3 +115,21 @@ def save_results(names, ts, predictions, labels, path):
             line += [str(a) for a in y]
             line = ",".join(line)
             f.write(line + '\n')
+
+
+def save_embeddings(names, embeddings, path):
+    common_utils.create_directory(os.path.dirname(path))
+    with open(path, 'w') as f:
+        header = ["stay"]
+        header += ["emb_{}".format(x) for x in range(len(embeddings[0]))]
+        header = ",".join(header)
+        f.write(header + '\n')
+        for name, emb in zip(names,embeddings):
+            line = [name]
+            #emb_str = ["%.10f" % x for x in emb]
+            emb_str = [str(x) for x in emb]
+            line += emb_str
+            line = ",".join(line)
+            f.write(line + '\n')
+
+
